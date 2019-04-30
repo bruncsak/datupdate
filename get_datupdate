@@ -1,0 +1,165 @@
+#! /bin/bash
+if [[ "$1" = "--help" ]]
+then
+  cat << ! >& 2
+Usage: $(basename $0) vscl612upg.pdf
+This script extracts the datupdate script from the McAfee
+command line scanner version 6.1.2 documentation PDF file.
+After it patches for the following:
+ - remove cached DAT file to avoid race condition
+   which makes already running uvscan process hanging and
+   burning the CPU
+ - use HTTP instead of FTP protocol for the update
+!
+  exit
+elif [[ "$1" != "" ]]
+then
+  REALSOURCE="$1"
+else
+  REALSOURCE=vscl612upg.pdf
+fi
+
+if [[ ! -a "$REALSOURCE" ]]
+then
+  echo "$REALSOURCE not found" >& 2
+  exit 1
+fi
+if ! sha256sum < "$REALSOURCE" | egrep -s -q -e '^6a042d0f67e277aeb15b591f335e26ce611522e8d423fe8de998e7329eb0badf  -$'
+then
+  echo "Checksum of $REALSOURCE does not match" >& 2
+  exit 1
+fi
+
+SOURCE="$(mktemp XXXXXX.pdf)"
+TARGET="$(mktemp XXXXXX.txt)"
+trap "rm -f $SOURCE $TARGET; exit" 0 1 2 3 13 15
+cp -a "$REALSOURCE" "$SOURCE"
+pdftotext -x 121 -W 433 -H 658 -y 78 -layout -nopgbrk "$SOURCE" "$TARGET"
+awk '{
+if ($0 ~ /^#!\/bin\/sh$/)      toprint=1
+if (toprint)                     print
+if ($0 ~ /^Cleanup ; exit 0$/) toprint=0
+}' "$TARGET" > datupdate.orig_from_6.1.2_pdf
+touch -r "$REALSOURCE" datupdate.orig_from_6.1.2_pdf
+chmod 755 datupdate.orig_from_6.1.2_pdf
+cp -a datupdate.orig_from_6.1.2_pdf datupdate
+patch -s datupdate << "EOT"
+*** datupdate.orig_from_6.1.2_pdf	2019-04-30 12:22:28.000000000 +0200
+--- datupdate	2019-04-30 13:08:03.000000000 +0200
+***************
+*** 3,14 ****
+! # required programs: unzip, ftp, awk, echo, cut, ls, printf
+  
+  ### defaults: do not modify
+  unset md5checker leave_files debug
+  
+  #============================================================
+- ### change these variables to match your information
+- # Set the following to your own e-mail address
+- EMAIL_ADDRESS=""
+  
+  ### change these variables to match your environment
+  # install_dir must be a directory and writable
+--- 3,11 ----
+! # required programs: unzip, wget, awk, echo, cut, ls, printf
+  
+  ### defaults: do not modify
+  unset md5checker leave_files debug
+  
+  #============================================================
+  
+  ### change these variables to match your environment
+  # install_dir must be a directory and writable
+***************
+*** 89,96 ****
+       return 0
+  }
+  
+! #   Function to download a specified file from ftp.mcafee.com
+! #   $1 - Path on ftp server
+  #   $2 - name of file to download.
+  #   $3 - download type (either bin or ascii)
+  # $4 - download directory
+--- 86,93 ----
+       return 0
+  }
+  
+! #   Function to download a specified file from update.nai.com
+! #   $1 - Path on http server
+  #   $2 - name of file to download.
+  #   $3 - download type (either bin or ascii)
+  # $4 - download directory
+***************
+*** 99,118 ****
+      [ "$3" = "bin" -o "$3" = "ascii" ] || return 1
+      dtype="$3"
+  
+-     # An e-mail address must be set in this environment variable
+-     [ -n "$EMAIL_ADDRESS" ] || return 1
+- 
+      print_debug "downloading file '$2' into '$4'"
+!     echo "
+! open ftp.mcafee.com
+! user anonymous $EMAIL_ADDRESS
+! cd $1
+! lcd $4
+! $dtype
+! get $2
+! " | ftp -i -n || return 1
+! 
+!     return 0
+  }
+  
+  # Function to check the specified file against its expected size, checksum and MD5 checksum.
+--- 96,116 ----
+      [ "$3" = "bin" -o "$3" = "ascii" ] || return 1
+      dtype="$3"
+  
+      print_debug "downloading file '$2' into '$4'"
+!     if wget -q -U "bruncsak/datupdate 2019-04-30" -O "$4/$2.$$" "http://update.nai.com/Products/$1/$2"
+!     then
+!       if [ "$dtype" = "ascii" ]
+!       then
+!         awk '{ sub(/\r$/, ""); print }' "$4/$2.$$" > "$4/$2"
+!         rm "$4/$2.$$"
+!       else
+!         mv "$4/$2.$$" "$4/$2"
+!       fi
+!       return 0
+!     fi
+!     RETVAL=$?
+!     rm -f "$4/$2.$$"
+!     return $RETVAL
+  }
+  
+  # Function to check the specified file against its expected size, checksum and MD5 checksum.
+***************
+*** 159,164 ****
+--- 157,164 ----
+           chmod "$permissions" "$1/$fname"
+      done
+  
++     rm -f $1/runtime.dat
++ 
+      return 0
+  }
+  
+***************
+*** 204,210 ****
+           "DATVersion") major_ver=$value ;; # available: major
+           "MinorVersion") minor_ver=$value ;; # available: minor
+           "FileName") file_name="$value" ;; # file to download
+!          "FilePath") file_path=$value ;; # path on FTP server
+           "FileSize") file_size=$value ;; # file size
+           "MD5") md5=$value ;; # MD5 checksum
+      esac
+--- 204,210 ----
+           "DATVersion") major_ver=$value ;; # available: major
+           "MinorVersion") minor_ver=$value ;; # available: minor
+           "FileName") file_name="$value" ;; # file to download
+!          "FilePath") file_path=$value ;; # path on HTTP server
+           "FileSize") file_size=$value ;; # file size
+           "MD5") md5=$value ;; # MD5 checksum
+      esac
+EOT
+touch -r "$0" datupdate
