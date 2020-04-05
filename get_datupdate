@@ -45,7 +45,7 @@ chmod 755 datupdate.orig_from_6.1.2_pdf
 cp -a datupdate.orig_from_6.1.2_pdf datupdate
 patch -s datupdate << "EOT"
 *** datupdate.orig_from_6.1.2_pdf	2019-04-30 12:22:28.000000000 +0200
---- datupdate	2019-04-30 13:08:03.000000000 +0200
+--- datupdate	2020-04-05 16:28:49.000000000 +0200
 ***************
 *** 3,14 ****
 ! # required programs: unzip, ftp, awk, echo, cut, ls, printf
@@ -111,12 +111,12 @@ patch -s datupdate << "EOT"
   }
   
   # Function to check the specified file against its expected size, checksum and MD5 checksum.
---- 96,116 ----
+--- 96,117 ----
       [ "$3" = "bin" -o "$3" = "ascii" ] || return 1
       dtype="$3"
   
       print_debug "downloading file '$2' into '$4'"
-!     if wget -q -U "bruncsak/datupdate 2019-04-30" -O "$4/$2.$$" "http://update.nai.com/Products/$1/$2"
+!     if wget -q -U "bruncsak/datupdate 2020-04-05" -O "$4/$2.$$" "http://update.nai.com/Products/$1/$2"
 !     then
 !       if [ "$dtype" = "ascii" ]
 !       then
@@ -126,16 +126,17 @@ patch -s datupdate << "EOT"
 !         mv "$4/$2.$$" "$4/$2"
 !       fi
 !       return 0
+!     else
+!       RETVAL=$?
+!       rm -f "$4/$2.$$"
+!       return $RETVAL
 !     fi
-!     RETVAL=$?
-!     rm -f "$4/$2.$$"
-!     return $RETVAL
   }
   
   # Function to check the specified file against its expected size, checksum and MD5 checksum.
 ***************
 *** 159,164 ****
---- 157,164 ----
+--- 158,165 ----
            chmod "$permissions" "$1/$fname"
       done
   
@@ -153,7 +154,7 @@ patch -s datupdate << "EOT"
            "FileSize") file_size=$value ;; # file size
            "MD5") md5=$value ;; # MD5 checksum
       esac
---- 204,210 ----
+--- 205,211 ----
            "DATVersion") major_ver=$value ;; # available: major
            "MinorVersion") minor_ver=$value ;; # available: minor
            "FileName") file_name="$value" ;; # file to download
